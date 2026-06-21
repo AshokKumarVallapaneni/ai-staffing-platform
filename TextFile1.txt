@@ -1,1 +1,0 @@
-this is test file to check the git status and git add command.
