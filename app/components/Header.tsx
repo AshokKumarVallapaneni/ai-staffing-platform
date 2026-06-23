@@ -19,6 +19,7 @@ export default function Header() {
       <Link href="/questions/upload">Question Upload</Link>
       <Link href="/questions">Question Bank</Link>
       <Link href="/interviews/manage">Interview Orchestration</Link>
+      <Link href="/interviews/results">Interview Results</Link>
     </div>
   );
 }

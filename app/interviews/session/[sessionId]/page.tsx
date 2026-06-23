@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 type InterviewQuestion = {
   id: string;
@@ -12,6 +12,7 @@ type InterviewQuestion = {
 
 export default function InterviewSessionPage() {
   const params = useParams();
+  const router = useRouter();
   const sessionId = params.sessionId as string;
 
   const [candidateName, setCandidateName] = useState("");
@@ -22,9 +23,9 @@ export default function InterviewSessionPage() {
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-const [followUpQuestion, setFollowUpQuestion] = useState("");
-const [showFollowUp, setShowFollowUp] = useState(false);
-const [isListening, setIsListening] = useState(false);
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
   const loadSession = async () => {
     const res = await fetch(`/api/interviews/session/${sessionId}`);
@@ -42,288 +43,169 @@ const [isListening, setIsListening] = useState(false);
   useEffect(() => {
     loadSession();
   }, []);
-const startVoiceInput = () => {
-  const SpeechRecognition =
-    (window as any).SpeechRecognition ||
-    (window as any).webkitSpeechRecognition;
 
-  if (!SpeechRecognition) {
-    alert("Speech Recognition is not supported in this browser.");
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-
-  recognition.lang = "en-US";
-  recognition.continuous = false;
-  recognition.interimResults = false;
-
-  setIsListening(true);
-
-  recognition.onresult = (event: any) => {
-    const transcript =
-      event.results[0][0].transcript;
-
-    setAnswerText((prev) =>
-      prev ? `${prev} ${transcript}` : transcript
-    );
-  };
-
-  recognition.onend = () => {
-    setIsListening(false);
-  };
-
-  recognition.start();
-};
   const currentQuestion = questions[currentIndex];
 
-useEffect(() => {
-  if (!started) return;
+  useEffect(() => {
+    if (!started) return;
 
-  if (!currentQuestion?.question) return;
+    const questionToSpeak = showFollowUp
+      ? followUpQuestion
+      : currentQuestion?.question;
 
-  window.speechSynthesis.cancel();
+    if (!questionToSpeak) return;
 
-  const speech = new SpeechSynthesisUtterance(
-    currentQuestion.question
-  );
+    window.speechSynthesis.cancel();
 
-  speech.rate = 1;
-  speech.pitch = 1;
+    const speech = new SpeechSynthesisUtterance(questionToSpeak);
+    speech.rate = 1;
+    speech.pitch = 1;
 
-  window.speechSynthesis.speak(speech);
-}, [currentQuestion, started]);
+    window.speechSynthesis.speak(speech);
+  }, [currentQuestion, started, showFollowUp, followUpQuestion]);
 
-//  const saveAnswer = async () => {
-//   if (!currentQuestion) return;
+  const startVoiceInput = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
 
-//   setSaving(true);
-
-//   const saveResponse = await fetch(
-//     "/api/interviews/answer",
-//     {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//       },
-//       body: JSON.stringify({
-//         answer_id: currentQuestion.id,
-//         answer_text: answerText,
-//       }),
-//     }
-//   );
-
-//   if (!saveResponse.ok) {
-//     setSaving(false);
-//     alert("Failed to save answer");
-//     return;
-//   }
-
-//   const followupResponse = await fetch(
-//     "/api/interviews/followup",
-//     {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//       },
-//       body: JSON.stringify({
-//         sessionId,
-//         answerId: currentQuestion.id,
-//         question: currentQuestion.question,
-//         answer: answerText,
-//       }),
-//     }
-//   );
-
-//   const followupData =
-//     await followupResponse.json();
-
-//   setSaving(false);
-
-//   if (
-//     followupData.followUpQuestion &&
-//     !showFollowUp
-//   ) {
-//     setFollowUpQuestion(
-//       followupData.followUpQuestion
-//     );
-
-//     setShowFollowUp(true);
-
-//     const speech =
-//       new SpeechSynthesisUtterance(
-//         followupData.followUpQuestion
-//       );
-
-//     window.speechSynthesis.speak(speech);
-
-//     return;
-//   }
-
-//   setShowFollowUp(false);
-//   setFollowUpQuestion("");
-
-//   const updated = [...questions];
-
-//   updated[currentIndex] = {
-//     ...updated[currentIndex],
-//     answer_text: answerText,
-//   };
-
-//   setQuestions(updated);
-
-//   if (currentIndex + 1 < questions.length) {
-//     setCurrentIndex(currentIndex + 1);
-
-//     setAnswerText(
-//       questions[currentIndex + 1]?.answer_text || ""
-//     );
-//   } else {
-//     setCompleted(true);
-//   }
-// };
-
-
-const saveAnswer = async () => {
-  if (!currentQuestion) return;
-
-  setSaving(true);
-
-  try {
-    // Save answer
-    const saveResponse = await fetch(
-      "/api/interviews/answer",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body: JSON.stringify({
-          answer_id:
-            currentQuestion.id,
-          answer_text:
-            answerText,
-        }),
-      }
-    );
-
-    if (!saveResponse.ok) {
-      throw new Error(
-        "Failed to save answer"
-      );
-    }
-
-    // Ask AI what to do next
-    const followupResponse =
-      await fetch(
-        "/api/interviews/followup",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            sessionId,
-            answerId:
-              currentQuestion.id,
-            question:
-              showFollowUp
-                ? followUpQuestion
-                : currentQuestion.question,
-            answer:
-              answerText,
-          }),
-        }
-      );
-
-    const aiResult =
-      await followupResponse.json();
-
-    console.log(
-      "AI Result:",
-      aiResult
-    );
-
-    // FOLLOW UP
-    if (
-      aiResult.decision ===
-        "FOLLOW_UP" &&
-      aiResult.followUpQuestion
-    ) {
-      setFollowUpQuestion(
-        aiResult.followUpQuestion
-      );
-
-      setShowFollowUp(true);
-
-      setAnswerText("");
-
-      window.speechSynthesis.cancel();
-
-      const speech =
-        new SpeechSynthesisUtterance(
-          aiResult.followUpQuestion
-        );
-
-      window.speechSynthesis.speak(
-        speech
-      );
-
+    if (!SpeechRecognition) {
+      alert("Speech Recognition is not supported in this browser.");
       return;
     }
 
-    // END INTERVIEW
-    if (
-      aiResult.decision ===
-      "END_INTERVIEW"
-    ) {
-      setCompleted(true);
-      return;
-    }
+    const recognition = new SpeechRecognition();
 
-    // NEXT TOPIC
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-    setShowFollowUp(false);
-    setFollowUpQuestion("");
+    setIsListening(true);
 
-    const updated =
-      [...questions];
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
 
-    updated[currentIndex] = {
-      ...updated[currentIndex],
-      answer_text:
-        answerText,
+      setAnswerText((prev) => (prev ? `${prev} ${transcript}` : transcript));
     };
 
-    setQuestions(updated);
+    recognition.onend = () => {
+      setIsListening(false);
+    };
 
-    if (
-      currentIndex + 1 <
-      questions.length
-    ) {
-      setCurrentIndex(
-        currentIndex + 1
-      );
+    recognition.start();
+  };
 
-      setAnswerText("");
-    } else {
-      setCompleted(true);
+  const goToCodingRound = () => {
+    router.push(`/interviews/coding/${sessionId}`);
+  };
+
+  const saveAnswer = async () => {
+    if (!currentQuestion) return;
+
+    setSaving(true);
+
+    try {
+      const saveResponse = await fetch("/api/interviews/answer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          answer_id: currentQuestion.id,
+          answer_text: answerText,
+        }),
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error("Failed to save answer");
+      }
+
+      const followupResponse = await fetch("/api/interviews/followup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+          answerId: currentQuestion.id,
+          question: showFollowUp ? followUpQuestion : currentQuestion.question,
+          answer: answerText,
+        }),
+      });
+
+      const aiResult = await followupResponse.json();
+
+      if (
+        aiResult.decision === "FOLLOW_UP" &&
+        aiResult.followUpQuestion &&
+        !showFollowUp
+      ) {
+        setFollowUpQuestion(aiResult.followUpQuestion);
+        setShowFollowUp(true);
+        setAnswerText("");
+
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(
+          new SpeechSynthesisUtterance(aiResult.followUpQuestion)
+        );
+
+        return;
+      }
+
+      if (aiResult.decision === "START_CODING_ROUND") {
+        router.push(`/interviews/coding/${sessionId}`);
+        return;
+      }
+
+      if (aiResult.decision === "END_INTERVIEW") {
+        setCompleted(true);
+        return;
+      }
+
+      setShowFollowUp(false);
+      setFollowUpQuestion("");
+
+      const updated = [...questions];
+      updated[currentIndex] = {
+        ...updated[currentIndex],
+        answer_text: answerText,
+      };
+
+      setQuestions(updated);
+
+      if (currentIndex + 1 < questions.length) {
+        setCurrentIndex(currentIndex + 1);
+        setAnswerText("");
+      } else {
+        setCompleted(true);
+      }
+    } catch (error) {
+      console.error("Save Answer Error:", error);
+      alert("Failed to process answer.");
+    } finally {
+      setSaving(false);
     }
-  } catch (error) {
-    console.error(
-      "Save Answer Error:",
-      error
-    );
+  };
 
-    alert(
-      "Failed to process answer."
-    );
-  } finally {
-    setSaving(false);
-  }
-};
+  const finishInterview = async () => {
+    const res = await fetch("/api/interviews/complete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId,
+      }),
+    });
+
+    if (!res.ok) {
+      alert("Failed to finish interview.");
+      return;
+    }
+
+    alert("Interview completed successfully. Thank you!");
+  };
+
   if (loading) {
     return <div style={page}>Loading interview...</div>;
   }
@@ -335,8 +217,8 @@ const saveAnswer = async () => {
           <Avatar />
           <h1>Welcome, {candidateName}</h1>
           <p>
-            I am your AI Interviewer. I will ask you questions one by one.
-            Please answer clearly. At the end, you can review your questions and answers.
+            I am your AI Interviewer. I will ask you questions one by one. Please
+            answer clearly. At the end, you can review your questions and answers.
           </p>
 
           <button onClick={() => setStarted(true)} style={primaryButton}>
@@ -355,7 +237,8 @@ const saveAnswer = async () => {
           <div>
             <h1>Interview Review</h1>
             <p>
-              Thank you, {candidateName}. Below are the questions asked and your submitted answers.
+              Thank you, {candidateName}. Below are the questions asked and your
+              submitted answers.
             </p>
           </div>
         </div>
@@ -376,7 +259,9 @@ const saveAnswer = async () => {
         </div>
 
         <div style={{ textAlign: "center", marginTop: "24px" }}>
-          <button style={primaryButton}>Finish Interview</button>
+          <button onClick={finishInterview} style={primaryButton}>
+            Finish Interview
+          </button>
         </div>
       </div>
     );
@@ -391,6 +276,17 @@ const saveAnswer = async () => {
           <p>
             Question {currentIndex + 1} of {questions.length}
           </p>
+
+          <button
+            onClick={goToCodingRound}
+            style={{
+              ...primaryButton,
+              background: "#0f766e",
+              marginTop: "30px",
+            }}
+          >
+            Start Coding Round
+          </button>
         </div>
 
         <div style={questionPanel}>
@@ -403,31 +299,29 @@ const saveAnswer = async () => {
             />
           </div>
 
-          <p style={sourceBadge}>{currentQuestion?.question_source}</p>
+          <p style={sourceBadge}>
+            {showFollowUp ? "FOLLOW_UP" : currentQuestion?.question_source}
+          </p>
 
           <h1 style={{ marginTop: "14px" }}>
-  {showFollowUp
-    ? followUpQuestion
-    : currentQuestion?.question}
-</h1>
-<button
-  onClick={startVoiceInput}
-  style={{
-    padding: "10px 14px",
-    borderRadius: "8px",
-    border: "none",
-    background: isListening
-      ? "#ef4444"
-      : "#0ea5e9",
-    color: "#fff",
-    cursor: "pointer",
-    marginBottom: "12px",
-  }}
->
-  {isListening
-    ? "🎙 Listening..."
-    : "🎤 Speak Answer"}
-</button>
+            {showFollowUp ? followUpQuestion : currentQuestion?.question}
+          </h1>
+
+          <button
+            onClick={startVoiceInput}
+            style={{
+              padding: "10px 14px",
+              borderRadius: "8px",
+              border: "none",
+              background: isListening ? "#ef4444" : "#0ea5e9",
+              color: "#fff",
+              cursor: "pointer",
+              marginBottom: "12px",
+            }}
+          >
+            {isListening ? "🎙 Listening..." : "🎤 Speak Answer"}
+          </button>
+
           <textarea
             placeholder="Type your answer here..."
             value={answerText}
@@ -435,37 +329,25 @@ const saveAnswer = async () => {
             rows={10}
             style={textarea}
           />
-          {showFollowUp && (
-  <div
-    style={{
-      marginTop: "20px",
-      padding: "16px",
-      background: "#eff6ff",
-      borderRadius: "10px",
-      border: "1px solid #93c5fd",
-    }}
-  >
-    <h3
-      style={{
-        color: "#1d4ed8",
-      }}
-    >
-      AI Follow-up Question
-    </h3>
 
-    <p>{followUpQuestion}</p>
-  </div>
-)}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <button onClick={saveAnswer} disabled={saving} style={primaryButton}>
+              {saving
+                ? "AI Evaluating..."
+                : showFollowUp
+                ? "Submit Follow-Up"
+                : currentIndex + 1 === questions.length
+                ? "Submit Final Answer"
+                : "Submit Answer"}
+            </button>
 
-          <button onClick={saveAnswer} disabled={saving} style={primaryButton}>
-            {saving
-  ? "AI Evaluating..."
-  : showFollowUp
-  ? "Submit Follow-Up"
-  : currentIndex + 1 === questions.length
-  ? "Submit Final Answer"
-  : "Submit Answer"}
-          </button>
+            <button
+              onClick={goToCodingRound}
+              style={{ ...primaryButton, background: "#0f766e" }}
+            >
+              Start Coding Round
+            </button>
+          </div>
         </div>
       </div>
     </div>

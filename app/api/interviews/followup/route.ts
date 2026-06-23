@@ -21,16 +21,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const prompt = `
-You are a Senior Technical Interviewer.
+   const prompt = `
+You are a senior technical interviewer.
 
-Question:
+You must evaluate the candidate answer and decide the next action.
+
+Original Question:
 ${question}
 
 Candidate Answer:
 ${answer}
-
-Evaluate the answer.
 
 Return ONLY valid JSON.
 
@@ -44,29 +44,25 @@ Return ONLY valid JSON.
 }
 
 Rules:
+- If the answer is empty, weak, vague, or unrelated, ask a simple clarification follow-up.
+- If the answer is decent, ask a deeper scenario-based follow-up.
+- If the answer is strong, set decision to "NEXT_TOPIC".
+- Do NOT repeat or rephrase the original question.
+- The followUpQuestion must be different from the original question.
+- The followUpQuestion must probe deeper into the candidate's answer.
+- If candidate did not answer properly, ask them to explain with a real project example.
+- decision must be one of:
+  FOLLOW_UP
+  NEXT_TOPIC
+  START_CODING_ROUND
+  END_INTERVIEW
 
-- technicalScore = 0 to 100
-- communicationScore = 0 to 100
-- confidenceScore = 0 to 100
+Examples:
+Bad follow-up:
+${question}
 
-decision must be one of:
-
-FOLLOW_UP
-NEXT_TOPIC
-START_CODING_ROUND
-END_INTERVIEW
-
-FOLLOW_UP:
-Generate a deeper technical follow-up question.
-
-NEXT_TOPIC:
-No follow-up question.
-
-START_CODING_ROUND:
-No follow-up question.
-
-END_INTERVIEW:
-No follow-up question.
+Good follow-up:
+Can you give a real project example and explain what trade-offs you considered?
 
 Return JSON only.
 `;

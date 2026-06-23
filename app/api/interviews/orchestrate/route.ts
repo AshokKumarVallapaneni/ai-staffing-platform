@@ -31,9 +31,40 @@ async function getQuestionBankQuestions(profileType: string, count: number) {
     .eq("review_status", "Approved")
     .limit(count);
 
-  if (profileType) {
-    query = query.eq("profile_type", profileType);
-  }
+ const profileMap: Record<string, string[]> = {
+  "Java Full Stack Developer": [
+    "Java Full Stack Developer",
+    "Java Developer",
+    "Java Backend Developer",
+    "Java Microservices Developer",
+    "Backend Developer",
+    "System Design",
+  ],
+  ".NET Full Stack Developer": [
+    ".NET Full Stack Developer",
+    ".NET Developer",
+    "Sr .NET Developer",
+    "Backend Developer",
+    "System Design",
+  ],
+  "Python Backend Developer": [
+    "Python Backend Developer",
+    "Python Developer",
+    "Backend Developer",
+    "System Design",
+  ],
+  "QA Automation Engineer": [
+    "QA Automation Engineer",
+    "QA Engineer",
+    "SDET",
+    "SDET Data Testing",
+  ],
+};
+
+if (profileType) {
+  const relatedProfiles = profileMap[profileType] || [profileType];
+  query = query.in("profile_type", relatedProfiles);
+}
 
   const { data, error } = await query;
 
