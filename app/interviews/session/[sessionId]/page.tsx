@@ -5,9 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 
 type InterviewQuestion = {
   id: string;
+  question_id?: string | null;
   question: string;
   answer_text: string | null;
   question_source: string;
+  topic?: string | null;
+  difficulty?: string | null;
+  question_type?: string | null;
 };
 
 export default function InterviewSessionPage() {
@@ -21,48 +25,94 @@ export default function InterviewSessionPage() {
   const [answerText, setAnswerText] = useState("");
   const [started, setStarted] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [codingRequired, setCodingRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [followUpQuestion, setFollowUpQuestion] = useState("");
-  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState("");
 
   const loadSession = async () => {
-    const res = await fetch(`/api/interviews/session/${sessionId}`);
-    const data = await res.json();
+    setLoading(true);
+    setError("");
 
-    if (res.ok) {
-      setCandidateName(data.session?.consultants?.full_name || "Candidate");
-      setQuestions(data.questions || []);
-      setAnswerText(data.questions?.[0]?.answer_text || "");
+    try {
+      const res = await fetch(`/api/interviews/session/${sessionId}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load interview.");
+      }
+
+      const loadedQuestions: InterviewQuestion[] = data.questions || [];
+      const firstUnansweredIndex = loadedQuestions.findIndex(
+        (question) => !question.answer_text
+      );
+      const hasAnsweredQuestions = loadedQuestions.some(
+        (question) => Boolean(question.answer_text)
+      );
+
+      setCandidateName(
+        data.session?.consultants?.full_name || "Candidate"
+      );
+      setCodingRequired(Boolean(data.session?.coding_required));
+      setQuestions(loadedQuestions);
+
+      if (data.session?.status === "Completed") {
+        setCompleted(true);
+      } else if (
+        loadedQuestions.length > 0 &&
+        firstUnansweredIndex === -1
+      ) {
+        setCompleted(true);
+      } else {
+        const resolvedIndex =
+          firstUnansweredIndex >= 0 ? firstUnansweredIndex : 0;
+
+        setCurrentIndex(resolvedIndex);
+        setAnswerText(
+          loadedQuestions[resolvedIndex]?.answer_text || ""
+        );
+      }
+
+      if (
+        hasAnsweredQuestions ||
+        data.session?.status === "In Progress"
+      ) {
+        setStarted(true);
+      }
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Failed to load interview."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   useEffect(() => {
     loadSession();
-  }, []);
+  }, [sessionId]);
 
   const currentQuestion = questions[currentIndex];
 
   useEffect(() => {
-    if (!started) return;
-
-    const questionToSpeak = showFollowUp
-      ? followUpQuestion
-      : currentQuestion?.question;
-
-    if (!questionToSpeak) return;
+    if (!started || completed || !currentQuestion?.question) return;
 
     window.speechSynthesis.cancel();
 
-    const speech = new SpeechSynthesisUtterance(questionToSpeak);
+    const speech = new SpeechSynthesisUtterance(
+      currentQuestion.question
+    );
+
     speech.rate = 1;
     speech.pitch = 1;
 
     window.speechSynthesis.speak(speech);
-  }, [currentQuestion, started, showFollowUp, followUpQuestion]);
+  }, [currentQuestion?.id, started, completed]);
 
   const startVoiceInput = () => {
     const SpeechRecognition =
@@ -85,7 +135,13 @@ export default function InterviewSessionPage() {
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
 
-      setAnswerText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      setAnswerText((previous) =>
+        previous ? `${previous} ${transcript}` : transcript
+      );
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
     };
 
     recognition.onend = () => {
@@ -95,119 +151,177 @@ export default function InterviewSessionPage() {
     recognition.start();
   };
 
-  const goToCodingRound = () => {
-    router.push(`/interviews/coding/${sessionId}`);
-  };
-
   const saveAnswer = async () => {
-    if (!currentQuestion) return;
+    if (!currentQuestion || saving) return;
+
+    const cleanedAnswer = answerText.trim();
+
+    if (!cleanedAnswer) {
+      alert("Please provide an answer before continuing.");
+      return;
+    }
 
     setSaving(true);
+    setError("");
 
     try {
-      const saveResponse = await fetch("/api/interviews/answer", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          answer_id: currentQuestion.id,
-          answer_text: answerText,
-        }),
-      });
+      const response = await fetch(
+        "/api/interviews/next-question",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId,
+            answerId: currentQuestion.id,
+            answerText: cleanedAnswer,
+          }),
+        }
+      );
 
-      if (!saveResponse.ok) {
-        throw new Error("Failed to save answer");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            (typeof data.details === "string"
+              ? data.details
+              : "Failed to process the answer.")
+        );
       }
 
-      const followupResponse = await fetch("/api/interviews/followup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId,
-          answerId: currentQuestion.id,
-          question: showFollowUp ? followUpQuestion : currentQuestion.question,
-          answer: answerText,
-        }),
-      });
+      const updatedQuestions = [...questions];
 
-      const aiResult = await followupResponse.json();
+      updatedQuestions[currentIndex] = {
+        ...updatedQuestions[currentIndex],
+        answer_text: cleanedAnswer,
+      };
 
-      if (
-        aiResult.decision === "FOLLOW_UP" &&
-        aiResult.followUpQuestion &&
-        !showFollowUp
-      ) {
-        setFollowUpQuestion(aiResult.followUpQuestion);
-        setShowFollowUp(true);
-        setAnswerText("");
-
+      if (data.decision === "START_CODING_ROUND") {
+        setQuestions(updatedQuestions);
         window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(
-          new SpeechSynthesisUtterance(aiResult.followUpQuestion)
+
+        router.push(
+          data.codingUrl ||
+            `/interviews/coding/${sessionId}`
         );
 
         return;
       }
 
-      if (aiResult.decision === "START_CODING_ROUND") {
-        router.push(`/interviews/coding/${sessionId}`);
-        return;
-      }
-
-      if (aiResult.decision === "END_INTERVIEW") {
+      if (data.decision === "END_INTERVIEW") {
+        setQuestions(updatedQuestions);
+        window.speechSynthesis.cancel();
         setCompleted(true);
         return;
       }
 
-      setShowFollowUp(false);
-      setFollowUpQuestion("");
+      if (data.nextQuestion) {
+        const nextQuestion =
+          data.nextQuestion as InterviewQuestion;
 
-      const updated = [...questions];
-      updated[currentIndex] = {
-        ...updated[currentIndex],
-        answer_text: answerText,
-      };
+        let nextIndex = updatedQuestions.findIndex(
+          (question) => question.id === nextQuestion.id
+        );
 
-      setQuestions(updated);
+        if (nextIndex < 0) {
+          nextIndex = updatedQuestions.length;
+          updatedQuestions.push(nextQuestion);
+        }
 
-      if (currentIndex + 1 < questions.length) {
-        setCurrentIndex(currentIndex + 1);
+        setQuestions(updatedQuestions);
+        setCurrentIndex(nextIndex);
         setAnswerText("");
-      } else {
-        setCompleted(true);
+
+        window.speechSynthesis.cancel();
+
+        const speech = new SpeechSynthesisUtterance(
+          nextQuestion.question
+        );
+
+        speech.rate = 1;
+        speech.pitch = 1;
+
+        window.speechSynthesis.speak(speech);
       }
-    } catch (error) {
-      console.error("Save Answer Error:", error);
-      alert("Failed to process answer.");
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to process the answer.";
+
+      setError(message);
+      alert(message);
     } finally {
       setSaving(false);
     }
   };
 
   const finishInterview = async () => {
-    const res = await fetch("/api/interviews/complete", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sessionId,
-      }),
-    });
+    setFinishing(true);
+    setError("");
 
-    if (!res.ok) {
-      alert("Failed to finish interview.");
-      return;
+    try {
+      const res = await fetch("/api/interviews/complete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sessionId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error || "Failed to finish interview."
+        );
+      }
+
+      setFinished(true);
+    } catch (finishError) {
+      setError(
+        finishError instanceof Error
+          ? finishError.message
+          : "Failed to finish interview."
+      );
+    } finally {
+      setFinishing(false);
     }
-
-    alert("Interview completed successfully. Thank you!");
   };
 
   if (loading) {
     return <div style={page}>Loading interview...</div>;
+  }
+
+  if (error && questions.length === 0) {
+    return (
+      <div style={page}>
+        <div style={card}>
+          <h1>Unable to Load Interview</h1>
+          <p style={{ color: "#991b1b" }}>{error}</p>
+          <button onClick={loadSession} style={primaryButton}>
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (finished) {
+    return (
+      <div style={page}>
+        <div style={card}>
+          <Avatar />
+          <h1>Interview Submitted</h1>
+          <p>
+            Thank you, {candidateName}. Your interview and coding
+            results have been submitted for review.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (!started) {
@@ -217,11 +331,14 @@ export default function InterviewSessionPage() {
           <Avatar />
           <h1>Welcome, {candidateName}</h1>
           <p>
-            I am your AI Interviewer. I will ask you questions one by one. Please
-            answer clearly. At the end, you can review your questions and answers.
+            I am your AI interviewer. The interview is adaptive and
+            will focus on the skills identified in your resume.
           </p>
 
-          <button onClick={() => setStarted(true)} style={primaryButton}>
+          <button
+            onClick={() => setStarted(true)}
+            style={primaryButton}
+          >
             Start Interview
           </button>
         </div>
@@ -237,35 +354,99 @@ export default function InterviewSessionPage() {
           <div>
             <h1>Interview Review</h1>
             <p>
-              Thank you, {candidateName}. Below are the questions asked and your
-              submitted answers.
+              Thank you, {candidateName}. Review the questions and
+              your submitted answers below.
             </p>
           </div>
         </div>
 
         <div style={{ display: "grid", gap: "16px" }}>
-          {questions.map((q, index) => (
-            <div key={q.id} style={reviewCard}>
-              <div style={questionNumber}>Question {index + 1}</div>
-              <h3>{q.question}</h3>
-              <p style={sourceBadge}>{q.question_source}</p>
+          {questions
+            .filter((question) => Boolean(question.answer_text))
+            .map((question, index) => (
+              <div key={question.id} style={reviewCard}>
+                <div style={questionNumber}>
+                  Interview Question {index + 1}
+                </div>
 
-              <div style={answerBox}>
-                <strong>Your Answer:</strong>
-                <p>{q.answer_text || "No answer provided."}</p>
+                {question.topic && (
+                  <span style={reviewTopicBadge}>
+                    {question.topic}
+                  </span>
+                )}
+
+                <h3>{question.question}</h3>
+
+                <p style={sourceBadge}>
+                  {formatSource(question.question_source)}
+                </p>
+
+                <div style={answerBox}>
+                  <strong>Your Answer:</strong>
+                  <p>
+                    {question.answer_text ||
+                      "No answer provided."}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
 
-        <div style={{ textAlign: "center", marginTop: "24px" }}>
-          <button onClick={finishInterview} style={primaryButton}>
-            Finish Interview
+        <div style={reviewActions}>
+          {codingRequired && (
+            <button
+              onClick={() =>
+                router.push(
+                  `/interviews/coding/${sessionId}`
+                )
+              }
+              style={{
+                ...primaryButton,
+                background: "#0f766e",
+              }}
+            >
+              Open Coding Round
+            </button>
+          )}
+
+          <button
+            onClick={finishInterview}
+            disabled={finishing}
+            style={primaryButton}
+          >
+            {finishing
+              ? "Submitting Interview..."
+              : "Finish Interview"}
           </button>
+        </div>
+
+        {error && <div style={errorBox}>{error}</div>}
+      </div>
+    );
+  }
+
+  if (!currentQuestion) {
+    return (
+      <div style={page}>
+        <div style={card}>
+          <h1>No Interview Question Available</h1>
+          <p>
+            The interview could not load the next question. Please
+            contact the administrator.
+          </p>
         </div>
       </div>
     );
   }
+
+  const answeredCount = questions.filter(
+    (question) => Boolean(question.answer_text)
+  ).length;
+
+  const softProgress = Math.min(
+    92,
+    12 + answeredCount * 3
+  );
 
   return (
     <div style={page}>
@@ -273,20 +454,19 @@ export default function InterviewSessionPage() {
         <div style={avatarPanel}>
           <Avatar />
           <h2>AI Interviewer</h2>
-          <p>
-            Question {currentIndex + 1} of {questions.length}
-          </p>
+          <p>Technical Interview in Progress</p>
 
-          <button
-            onClick={goToCodingRound}
-            style={{
-              ...primaryButton,
-              background: "#0f766e",
-              marginTop: "30px",
-            }}
-          >
-            Start Coding Round
-          </button>
+          {currentQuestion.topic && (
+            <div style={skillBadge}>
+              Current Focus: {currentQuestion.topic}
+            </div>
+          )}
+
+          {currentQuestion.difficulty && (
+            <div style={difficultyBadge}>
+              Difficulty: {currentQuestion.difficulty}
+            </div>
+          )}
         </div>
 
         <div style={questionPanel}>
@@ -294,71 +474,96 @@ export default function InterviewSessionPage() {
             <div
               style={{
                 ...progressFill,
-                width: `${((currentIndex + 1) / questions.length) * 100}%`,
+                width: `${softProgress}%`,
               }}
             />
           </div>
 
-          <p style={sourceBadge}>
-            {showFollowUp ? "FOLLOW_UP" : currentQuestion?.question_source}
-          </p>
+          <div style={questionMeta}>
+            <span style={sourceBadge}>
+              {formatSource(
+                currentQuestion.question_source
+              )}
+            </span>
+
+            {currentQuestion.question_type && (
+              <span style={typeBadge}>
+                {currentQuestion.question_type}
+              </span>
+            )}
+          </div>
 
           <h1 style={{ marginTop: "14px" }}>
-            {showFollowUp ? followUpQuestion : currentQuestion?.question}
+            {currentQuestion.question}
           </h1>
 
           <button
             onClick={startVoiceInput}
+            disabled={saving}
             style={{
-              padding: "10px 14px",
-              borderRadius: "8px",
-              border: "none",
-              background: isListening ? "#ef4444" : "#0ea5e9",
-              color: "#fff",
-              cursor: "pointer",
-              marginBottom: "12px",
+              ...voiceButton,
+              background: isListening
+                ? "#ef4444"
+                : "#0ea5e9",
             }}
           >
-            {isListening ? "🎙 Listening..." : "🎤 Speak Answer"}
+            {isListening
+              ? "🎙 Listening..."
+              : "🎤 Speak Answer"}
           </button>
 
           <textarea
             placeholder="Type your answer here..."
             value={answerText}
-            onChange={(e) => setAnswerText(e.target.value)}
+            onChange={(event) =>
+              setAnswerText(event.target.value)
+            }
             rows={10}
+            disabled={saving}
             style={textarea}
           />
 
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            <button onClick={saveAnswer} disabled={saving} style={primaryButton}>
-              {saving
-                ? "AI Evaluating..."
-                : showFollowUp
-                ? "Submit Follow-Up"
-                : currentIndex + 1 === questions.length
-                ? "Submit Final Answer"
-                : "Submit Answer"}
-            </button>
+          <button
+            onClick={saveAnswer}
+            disabled={saving}
+            style={{
+              ...primaryButton,
+              opacity: saving ? 0.7 : 1,
+            }}
+          >
+            {saving
+              ? "AI Evaluating and Preparing Next Question..."
+              : "Submit Answer"}
+          </button>
 
-            <button
-              onClick={goToCodingRound}
-              style={{ ...primaryButton, background: "#0f766e" }}
-            >
-              Start Coding Round
-            </button>
-          </div>
+          {error && <div style={errorBox}>{error}</div>}
         </div>
       </div>
     </div>
   );
 }
 
+function formatSource(source?: string | null) {
+  if (source === "QUESTION_BANK") {
+    return "Real Interview Question";
+  }
+
+  if (source === "AI_GENERATED") {
+    return "Adaptive AI Question";
+  }
+
+  if (source === "SYSTEM_GENERATED") {
+    return "Adaptive Interview Question";
+  }
+
+  return source || "Interview Question";
+}
+
 function Avatar() {
   return (
     <div style={avatarCircle}>
       <div style={avatarFace}>🤖</div>
-      <div style={pulseRing}></div>
+      <div style={pulseRing} />
     </div>
   );
 }
@@ -366,7 +571,8 @@ function Avatar() {
 const page: React.CSSProperties = {
   minHeight: "100vh",
   padding: "36px",
-  background: "linear-gradient(135deg,#eef2ff,#f8fafc)",
+  background:
+    "linear-gradient(135deg,#eef2ff,#f8fafc)",
 };
 
 const card: React.CSSProperties = {
@@ -381,7 +587,7 @@ const card: React.CSSProperties = {
 
 const interviewLayout: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "360px 1fr",
+  gridTemplateColumns: "360px minmax(0, 1fr)",
   gap: "24px",
   maxWidth: "1300px",
   margin: "0 auto",
@@ -397,6 +603,7 @@ const avatarPanel: React.CSSProperties = {
 };
 
 const questionPanel: React.CSSProperties = {
+  minWidth: 0,
   background: "#fff",
   borderRadius: "18px",
   padding: "28px",
@@ -407,7 +614,8 @@ const avatarCircle: React.CSSProperties = {
   width: "150px",
   height: "150px",
   borderRadius: "50%",
-  background: "linear-gradient(135deg,#2563eb,#7c3aed)",
+  background:
+    "linear-gradient(135deg,#2563eb,#7c3aed)",
   margin: "0 auto 24px",
   display: "flex",
   alignItems: "center",
@@ -429,6 +637,7 @@ const pulseRing: React.CSSProperties = {
 };
 
 const textarea: React.CSSProperties = {
+  boxSizing: "border-box",
   width: "100%",
   padding: "14px",
   borderRadius: "10px",
@@ -449,6 +658,15 @@ const primaryButton: React.CSSProperties = {
   fontWeight: "bold",
 };
 
+const voiceButton: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: "8px",
+  border: "none",
+  color: "#fff",
+  cursor: "pointer",
+  marginTop: "16px",
+};
+
 const progressBar: React.CSSProperties = {
   width: "100%",
   height: "10px",
@@ -459,7 +677,17 @@ const progressBar: React.CSSProperties = {
 
 const progressFill: React.CSSProperties = {
   height: "100%",
-  background: "linear-gradient(90deg,#2563eb,#7c3aed)",
+  background:
+    "linear-gradient(90deg,#2563eb,#7c3aed)",
+  transition: "width .35s ease",
+};
+
+const questionMeta: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  flexWrap: "wrap",
+  marginTop: "18px",
 };
 
 const sourceBadge: React.CSSProperties = {
@@ -467,6 +695,39 @@ const sourceBadge: React.CSSProperties = {
   background: "#e0f2fe",
   color: "#075985",
   padding: "5px 10px",
+  borderRadius: "999px",
+  fontSize: "12px",
+  fontWeight: "bold",
+};
+
+const typeBadge: React.CSSProperties = {
+  display: "inline-block",
+  background: "#ede9fe",
+  color: "#6d28d9",
+  padding: "5px 10px",
+  borderRadius: "999px",
+  fontSize: "12px",
+  fontWeight: "bold",
+};
+
+const skillBadge: React.CSSProperties = {
+  display: "inline-block",
+  marginTop: "12px",
+  padding: "7px 11px",
+  background: "rgba(255,255,255,.12)",
+  color: "#fff",
+  borderRadius: "999px",
+  fontSize: "13px",
+  fontWeight: "bold",
+};
+
+const difficultyBadge: React.CSSProperties = {
+  display: "block",
+  width: "fit-content",
+  margin: "10px auto 0",
+  padding: "7px 11px",
+  background: "rgba(255,255,255,.08)",
+  color: "#e2e8f0",
   borderRadius: "999px",
   fontSize: "12px",
   fontWeight: "bold",
@@ -496,9 +757,35 @@ const questionNumber: React.CSSProperties = {
   marginBottom: "8px",
 };
 
+const reviewTopicBadge: React.CSSProperties = {
+  display: "inline-block",
+  background: "#ede9fe",
+  color: "#6d28d9",
+  borderRadius: "999px",
+  padding: "5px 10px",
+  fontSize: "12px",
+  fontWeight: "bold",
+};
+
 const answerBox: React.CSSProperties = {
   marginTop: "14px",
   padding: "14px",
   background: "#f8fafc",
+  borderRadius: "10px",
+};
+
+const reviewActions: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "center",
+  gap: "12px",
+  flexWrap: "wrap",
+  marginTop: "24px",
+};
+
+const errorBox: React.CSSProperties = {
+  marginTop: "16px",
+  padding: "14px",
+  background: "#fee2e2",
+  color: "#991b1b",
   borderRadius: "10px",
 };

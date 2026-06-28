@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Consultant = {
   id: string;
@@ -9,6 +9,11 @@ type Consultant = {
   profile_type: string;
   seniority: string;
   experience_years: number;
+  hands_on_skills?: string[] | null;
+  skills?: string[] | null;
+  domain_skills?: string[] | null;
+  technology_domains_handled?: string[] | null;
+  tools?: string[] | null;
 };
 
 export default function InterviewManagePage() {
@@ -27,12 +32,32 @@ export default function InterviewManagePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const getQuestionCountByDuration = (minutes: number) => {
-    if (minutes <= 30) return 6;
-    if (minutes <= 45) return 8;
-    if (minutes <= 60) return 10;
-    return 15;
-  };
+  const selectedConsultant = useMemo(
+    () => consultants.find((c) => c.id === consultantId) || null,
+    [consultants, consultantId]
+  );
+
+  const techStack = useMemo(() => {
+    if (!selectedConsultant) return [];
+
+    const values = [
+      selectedConsultant.profile_type,
+      ...(selectedConsultant.hands_on_skills || []),
+      ...(selectedConsultant.skills || []),
+      ...(selectedConsultant.domain_skills || []),
+      ...(selectedConsultant.technology_domains_handled || []),
+      ...(selectedConsultant.tools || []),
+    ];
+
+    return Array.from(
+      new Set(
+        values
+          .filter(Boolean)
+          .map((x) => String(x).trim())
+          .filter((x) => x.length > 0)
+      )
+    );
+  }, [selectedConsultant]);
 
   const loadConsultants = async () => {
     setError("");
@@ -53,6 +78,11 @@ export default function InterviewManagePage() {
   }, []);
 
   const createInterview = async (startType: "SCHEDULED" | "ON_DEMAND") => {
+    if (!consultantId) {
+      setError("Please select a consultant.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setMessage("");
@@ -67,10 +97,10 @@ export default function InterviewManagePage() {
         start_type: startType,
         scheduled_at: startType === "SCHEDULED" ? scheduledAt : null,
         duration_minutes: duration,
-        question_count: getQuestionCountByDuration(duration),
         coding_required: codingRequired,
         broken_code_required: brokenCodeRequired,
         system_design_required: systemDesignRequired,
+        consultant_tech_stack: techStack,
         send_email: startType === "SCHEDULED",
         started_by: "Admin",
       }),
@@ -84,7 +114,7 @@ export default function InterviewManagePage() {
       return;
     }
 
-    setMessage(`${data.message}. Questions selected: ${data.questionsSelected}`);
+    setMessage(`${data.message}. Interview agent prepared questions based on consultant profile and tech stack.`);
     setResultLink(data.session.interview_link);
 
     if (startType === "ON_DEMAND") {
@@ -116,6 +146,36 @@ export default function InterviewManagePage() {
             </option>
           ))}
         </select>
+
+        {selectedConsultant && (
+          <div style={consultantBox}>
+            <div style={consultantGrid}>
+              <Info label="Name" value={selectedConsultant.full_name} />
+              <Info label="Email" value={selectedConsultant.email} />
+              <Info label="Profile" value={selectedConsultant.profile_type} />
+              <Info label="Seniority" value={selectedConsultant.seniority} />
+              <Info
+                label="Experience"
+                value={`${selectedConsultant.experience_years || 0} years`}
+              />
+            </div>
+
+            <div style={{ marginTop: "14px" }}>
+              <div style={label}>Tech Stack / Skills Detected</div>
+              {techStack.length > 0 ? (
+                <div style={tagWrap}>
+                  {techStack.map((skill) => (
+                    <span key={skill} style={tag}>
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={muted}>No skills found for this consultant.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div style={grid}>
           <div>
@@ -191,7 +251,7 @@ export default function InterviewManagePage() {
             disabled={loading}
             style={{ ...button, background: "#15803d" }}
           >
-            Start AI Interview Now
+            {loading ? "Preparing..." : "Start AI Interview Now"}
           </button>
 
           <button
@@ -199,7 +259,7 @@ export default function InterviewManagePage() {
             disabled={loading}
             style={{ ...button, background: "#2563eb" }}
           >
-            Schedule & Send Invite
+            {loading ? "Preparing..." : "Schedule & Send Invite"}
           </button>
         </div>
 
@@ -213,6 +273,15 @@ export default function InterviewManagePage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div>
+      <div style={infoLabel}>{label}</div>
+      <div style={infoValue}>{value || "N/A"}</div>
     </div>
   );
 }
@@ -262,6 +331,50 @@ const grid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: "16px",
+};
+
+const consultantBox: React.CSSProperties = {
+  padding: "16px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  borderRadius: "12px",
+  marginBottom: "18px",
+};
+
+const consultantGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, 1fr)",
+  gap: "12px",
+};
+
+const infoLabel: React.CSSProperties = {
+  fontSize: "12px",
+  color: "#64748b",
+  fontWeight: "bold",
+};
+
+const infoValue: React.CSSProperties = {
+  marginTop: "4px",
+  fontWeight: "bold",
+};
+
+const tagWrap: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
+};
+
+const tag: React.CSSProperties = {
+  background: "#e0f2fe",
+  color: "#075985",
+  padding: "6px 10px",
+  borderRadius: "999px",
+  fontSize: "13px",
+  fontWeight: 700,
+};
+
+const muted: React.CSSProperties = {
+  color: "#64748b",
 };
 
 const roundBox: React.CSSProperties = {
