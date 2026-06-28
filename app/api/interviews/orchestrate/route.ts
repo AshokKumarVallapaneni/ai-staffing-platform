@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { Resend } from "resend";
 import crypto from "crypto";
 import {
@@ -24,7 +24,7 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 export async function GET() {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("consultants")
     .select(`
       id,
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: consultant, error: consultantError } = await supabase
+    const { data: consultant, error: consultantError } = await supabaseAdmin
       .from("consultants")
       .select("*")
       .eq("id", consultant_id)
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
 
     const duration = Number(duration_minutes || 60);
 
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await supabaseAdmin
       .from("interview_sessions")
       .insert({
         consultant_id,
@@ -203,7 +203,7 @@ export async function POST(req: Request) {
         ? `${baseUrl}/interviews/session/${session.id}`
         : `${baseUrl}/interviews/start/${token}`;
 
-    const { error: linkError } = await supabase
+    const { error: linkError } = await supabaseAdmin
       .from("interview_sessions")
       .update({ interview_link: finalInterviewLink })
       .eq("id", session.id);
@@ -227,7 +227,7 @@ export async function POST(req: Request) {
         skill === firstSkill ? "In Progress" : "Not Started",
     }));
 
-    const { error: assessmentError } = await supabase
+    const { error: assessmentError } = await supabaseAdmin
       .from("interview_skill_assessments")
       .insert(assessmentRows);
 
@@ -303,7 +303,7 @@ export async function POST(req: Request) {
       questionDifficulty = fallback.difficulty;
     }
 
-    const { data: firstAnswer, error: firstAnswerError } = await supabase
+    const { data: firstAnswer, error: firstAnswerError } = await supabaseAdmin
       .from("interview_answers")
       .insert({
         session_id: session.id,
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
       );
     }
 
-    await supabase.from("interview_transcript_messages").insert([
+    await supabaseAdmin.from("interview_transcript_messages").insert([
       {
         session_id: session.id,
         answer_id: null,
@@ -371,7 +371,7 @@ export async function POST(req: Request) {
 
         emailStatus = "Sent";
 
-        await supabase
+        await supabaseAdmin
           .from("interview_sessions")
           .update({
             invite_sent_at: new Date().toISOString(),
@@ -382,7 +382,7 @@ export async function POST(req: Request) {
         console.error("Interview invite email failed:", emailError);
         emailStatus = "Failed";
 
-        await supabase
+        await supabaseAdmin
           .from("interview_sessions")
           .update({ email_status: "Failed" })
           .eq("id", session.id);

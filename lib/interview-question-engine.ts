@@ -1,4 +1,5 @@
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
 
 export type Difficulty = "Easy" | "Medium" | "Hard" | "Expert";
 
@@ -337,7 +338,7 @@ function calculateQuestionMatchScore(
 }
 
 export async function loadApprovedQuestionBank(): Promise<QuestionBankItem[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("question_bank")
     .select(`
       id,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   chooseNextUncoveredSkill,
   createFallbackQuestion,
@@ -22,6 +22,8 @@ import {
   type QuestionSource,
   type QuestionType,
 } from "@/lib/interview-question-engine";
+import { supabase } from "@/lib/supabase";
+
 
 export const runtime = "nodejs";
 
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
     }
 
     const { data: currentAnswer, error: currentAnswerError } =
-      await supabase
+      await supabaseAdmin
         .from("interview_answers")
         .select(`
           id,
@@ -116,7 +118,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await supabaseAdmin
       .from("interview_sessions")
       .select(`
         id,
@@ -191,7 +193,7 @@ export async function POST(req: Request) {
     );
 
     const { data: existingAnswers, error: existingAnswersError } =
-      await supabase
+      await supabaseAdmin
         .from("interview_answers")
         .select(`
           id,
@@ -228,7 +230,7 @@ export async function POST(req: Request) {
       .map((item) => item.question);
 
     const { data: assessments, error: assessmentsError } =
-      await supabase
+      await supabaseAdmin
         .from("interview_skill_assessments")
         .select(`
           skill_name,
@@ -438,7 +440,7 @@ Rules:
 
     const result = JSON.parse(outputText) as EvaluationResult;
 
-    const { error: answerUpdateError } = await supabase
+    const { error: answerUpdateError } = await supabaseAdmin
       .from("interview_answers")
       .update({
         answer_text: cleanedAnswer,
@@ -460,7 +462,7 @@ Rules:
       );
     }
 
-    await supabase.from("interview_transcript_messages").insert({
+    await supabaseAdmin.from("interview_transcript_messages").insert({
       session_id: sessionId,
       answer_id: answerId,
       speaker: "CANDIDATE",
@@ -499,7 +501,7 @@ Rules:
       enforcedCoverage = "In Progress";
     }
 
-    const { error: assessmentUpsertError } = await supabase
+    const { error: assessmentUpsertError } = await supabaseAdmin
       .from("interview_skill_assessments")
       .upsert(
         {
