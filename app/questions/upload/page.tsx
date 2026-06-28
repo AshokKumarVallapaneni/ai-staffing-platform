@@ -21,11 +21,16 @@ export default function QuestionUploadPage() {
   const [questions, setQuestions] = useState<UploadedQuestion[]>([]);
   const [error, setError] = useState("");
 
+  const [progress, setProgress] = useState(0);
+  const [progressText, setProgressText] = useState("");
+
   const uploadQuestions = async () => {
     setLoading(true);
     setMessage("");
     setError("");
     setQuestions([]);
+    setProgress(0);
+    setProgressText("");
 
     if (!file) {
       setError("Please select a file.");
@@ -33,24 +38,49 @@ export default function QuestionUploadPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("question_file", file);
+    try {
+      setProgress(10);
+      setProgressText("Preparing uploaded file...");
 
-    const res = await fetch("/api/questions/upload", {
-      method: "POST",
-      body: formData,
-    });
+      const formData = new FormData();
+      formData.append("question_file", file);
 
-    const data = await res.json();
-    setLoading(false);
+      setProgress(30);
+      setProgressText("Uploading file and extracting questions...");
 
-    if (!res.ok) {
-      setError(data.error || "Upload failed.");
-      return;
+      const res = await fetch("/api/questions/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      setProgress(75);
+      setProgressText("AI tagging and saving questions...");
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setProgress(0);
+        setProgressText("");
+        setError(data.error || "Upload failed.");
+        setLoading(false);
+        return;
+      }
+
+      setProgress(100);
+      setProgressText("Upload completed successfully.");
+
+      setMessage(
+        `Extracted ${data.extractedCount} question(s), inserted ${data.insertedCount} question(s).`
+      );
+
+      setQuestions(data.questions || []);
+    } catch (err) {
+      setProgress(0);
+      setProgressText("");
+      setError("Upload failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
-
-    setMessage(`Extracted ${data.extractedCount} question(s), inserted ${data.insertedCount} question(s).`);
-    setQuestions(data.questions || []);
   };
 
   return (
@@ -58,82 +88,77 @@ export default function QuestionUploadPage() {
       <div style={hero}>
         <h1 style={title}>Question Bank Bulk Upload</h1>
         <p style={subtitle}>
-          Upload Excel, CSV, or TXT files. The Question Intelligence Agent will auto-detect profile type,
-          technology, difficulty, expected concepts, follow-ups, and confidence score.
+          Upload Excel, CSV, or TXT file with interview questions. The Question
+          Intelligence Agent will auto-detect profile, technology, difficulty,
+          concepts, and follow-ups.
         </p>
       </div>
 
       <div style={card}>
-        <div style={uploadBox}>
-          <div>
-            <strong>Upload Question File</strong>
-            <p style={{ color: "#64748b", margin: "6px 0 0" }}>
-              Supported formats: .xlsx, .xls, .csv, .txt
-            </p>
-          </div>
+        <label style={label}>Upload Question File</label>
 
-          <input
-            type="file"
-            accept=".xlsx,.xls,.csv,.txt"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
-
-          <button onClick={uploadQuestions} disabled={loading} style={primaryButton}>
-            {loading ? "Uploading..." : "Upload Questions"}
-          </button>
-        </div>
+        <input
+          type="file"
+          accept=".xlsx,.xls,.csv,.txt"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          style={fileInput}
+        />
 
         {file && (
-          <div style={fileBadge}>
+          <div style={fileBox}>
             Selected File: <strong>{file.name}</strong>
           </div>
         )}
 
+        <button onClick={uploadQuestions} disabled={loading} style={button}>
+          {loading ? "Uploading..." : "Upload Questions"}
+        </button>
+
+        {progress > 0 && (
+          <div style={progressWrapper}>
+            <div style={progressLabel}>
+              {progressText} {progress}%
+            </div>
+
+            <div style={progressTrack}>
+              <div
+                style={{
+                  ...progressFill,
+                  width: `${progress}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {error && <div style={errorBox}>{error}</div>}
+
         {message && <div style={successBox}>{message}</div>}
       </div>
 
       {questions.length > 0 && (
-        <div style={tableCard}>
-          <h2 style={sectionTitle}>Uploaded Questions</h2>
+        <div style={resultCard}>
+          <h2 style={{ marginTop: 0 }}>Uploaded Questions Preview</h2>
 
-          <div style={{ overflowX: "auto" }}>
-            <table style={table}>
-              <thead>
-                <tr style={{ background: "#f1f5f9" }}>
-                  <th style={{ ...th, minWidth: "420px" }}>Question</th>
-                  <th style={th}>Profile</th>
-                  <th style={th}>Technology</th>
-                  <th style={th}>Sub Technology</th>
-                  <th style={th}>Category</th>
-                  <th style={th}>Difficulty</th>
-                  <th style={th}>Type</th>
-                  <th style={th}>Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {questions.map((q) => (
-                  <tr key={q.id}>
-                    <td style={td}>{q.question_text}</td>
-                    <td style={td}>{q.profile_type}</td>
-                    <td style={td}>{q.technology}</td>
-                    <td style={td}>{q.sub_technology}</td>
-                    <td style={td}>{q.category}</td>
-                    <td style={td}>
-                      <Badge text={q.difficulty} color="#b45309" bg="#fef3c7" />
-                    </td>
-                    <td style={td}>{q.question_type}</td>
-                    <td style={td}>
-                      <Badge
-                        text={String(q.confidence_score ?? 0)}
-                        color={(q.confidence_score ?? 0) >= 90 ? "#15803d" : "#b45309"}
-                        bg={(q.confidence_score ?? 0) >= 90 ? "#dcfce7" : "#fef3c7"}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={questionGrid}>
+            {questions.map((q) => (
+              <div key={q.id} style={questionCard}>
+                <h3 style={questionText}>{q.question_text}</h3>
+
+                <div style={metaGrid}>
+                  <Info label="Profile" value={q.profile_type} />
+                  <Info label="Technology" value={q.technology} />
+                  <Info label="Sub Tech" value={q.sub_technology} />
+                  <Info label="Category" value={q.category} />
+                  <Info label="Difficulty" value={q.difficulty} />
+                  <Info label="Type" value={q.question_type} />
+                  <Info
+                    label="Confidence"
+                    value={String(q.confidence_score ?? "N/A")}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -141,26 +166,155 @@ export default function QuestionUploadPage() {
   );
 }
 
-function Badge({ text, color, bg }: { text: string; color: string; bg: string }) {
+function Info({ label, value }: { label: string; value?: string }) {
   return (
-    <span style={{ background: bg, color, padding: "5px 9px", borderRadius: "999px", fontWeight: 700, fontSize: "12px" }}>
-      {text}
-    </span>
+    <div>
+      <div style={infoLabel}>{label}</div>
+      <div style={infoValue}>{value || "N/A"}</div>
+    </div>
   );
 }
 
-const page: React.CSSProperties = { padding: "36px", maxWidth: "1300px", margin: "0 auto", background: "#f8fafc", minHeight: "100vh" };
-const hero: React.CSSProperties = { background: "linear-gradient(135deg,#0f766e,#2563eb)", color: "#fff", padding: "28px", borderRadius: "16px", marginBottom: "24px" };
-const title: React.CSSProperties = { fontSize: "32px", fontWeight: "bold", margin: 0 };
-const subtitle: React.CSSProperties = { marginTop: "10px", maxWidth: "850px", lineHeight: 1.5 };
-const card: React.CSSProperties = { background: "#fff", padding: "24px", borderRadius: "14px", boxShadow: "0 8px 24px rgba(15,23,42,.08)", marginBottom: "24px" };
-const uploadBox: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr auto", alignItems: "center", gap: "18px", padding: "20px", border: "1px dashed #94a3b8", borderRadius: "14px", background: "#f1f5f9" };
-const primaryButton: React.CSSProperties = { padding: "12px 18px", background: "#111827", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" };
-const fileBadge: React.CSSProperties = { marginTop: "16px", background: "#eff6ff", color: "#1d4ed8", padding: "12px", borderRadius: "10px" };
-const errorBox: React.CSSProperties = { marginTop: "16px", padding: "14px", background: "#fee2e2", color: "#991b1b", borderRadius: "10px" };
-const successBox: React.CSSProperties = { marginTop: "16px", padding: "14px", background: "#dcfce7", color: "#166534", borderRadius: "10px" };
-const tableCard: React.CSSProperties = { background: "#fff", padding: "24px", borderRadius: "14px", boxShadow: "0 8px 24px rgba(15,23,42,.08)" };
-const sectionTitle: React.CSSProperties = { fontSize: "22px", fontWeight: "bold", marginBottom: "12px" };
-const table: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: "14px" };
-const th: React.CSSProperties = { border: "1px solid #e2e8f0", padding: "10px", textAlign: "left" };
-const td: React.CSSProperties = { border: "1px solid #e2e8f0", padding: "10px", verticalAlign: "top" };
+const page: React.CSSProperties = {
+  padding: "36px",
+  background: "#f8fafc",
+  minHeight: "100vh",
+};
+
+const hero: React.CSSProperties = {
+  background: "linear-gradient(135deg,#2563eb,#7c3aed)",
+  color: "#fff",
+  padding: "28px",
+  borderRadius: "16px",
+  marginBottom: "24px",
+};
+
+const title: React.CSSProperties = {
+  fontSize: "32px",
+  fontWeight: "bold",
+  margin: 0,
+};
+
+const subtitle: React.CSSProperties = {
+  marginTop: "10px",
+  maxWidth: "850px",
+  lineHeight: 1.5,
+};
+
+const card: React.CSSProperties = {
+  background: "#fff",
+  padding: "24px",
+  borderRadius: "14px",
+  boxShadow: "0 8px 24px rgba(15,23,42,.08)",
+  marginBottom: "24px",
+};
+
+const label: React.CSSProperties = {
+  display: "block",
+  fontWeight: "bold",
+  marginBottom: "10px",
+};
+
+const fileInput: React.CSSProperties = {
+  display: "block",
+  marginBottom: "14px",
+};
+
+const fileBox: React.CSSProperties = {
+  padding: "12px",
+  background: "#f1f5f9",
+  borderRadius: "10px",
+  marginBottom: "14px",
+};
+
+const button: React.CSSProperties = {
+  padding: "12px 18px",
+  background: "#111827",
+  color: "#fff",
+  border: "none",
+  borderRadius: "8px",
+  fontWeight: "bold",
+  cursor: "pointer",
+};
+
+const progressWrapper: React.CSSProperties = {
+  marginTop: "18px",
+};
+
+const progressLabel: React.CSSProperties = {
+  marginBottom: "8px",
+  fontWeight: "bold",
+  color: "#334155",
+};
+
+const progressTrack: React.CSSProperties = {
+  width: "100%",
+  height: "12px",
+  background: "#e5e7eb",
+  borderRadius: "999px",
+  overflow: "hidden",
+};
+
+const progressFill: React.CSSProperties = {
+  height: "100%",
+  background: "linear-gradient(90deg,#2563eb,#7c3aed)",
+  transition: "width 0.3s ease",
+};
+
+const errorBox: React.CSSProperties = {
+  marginTop: "16px",
+  padding: "14px",
+  background: "#fee2e2",
+  color: "#991b1b",
+  borderRadius: "10px",
+};
+
+const successBox: React.CSSProperties = {
+  marginTop: "16px",
+  padding: "14px",
+  background: "#dcfce7",
+  color: "#166534",
+  borderRadius: "10px",
+};
+
+const resultCard: React.CSSProperties = {
+  background: "#fff",
+  padding: "24px",
+  borderRadius: "14px",
+  boxShadow: "0 8px 24px rgba(15,23,42,.08)",
+};
+
+const questionGrid: React.CSSProperties = {
+  display: "grid",
+  gap: "14px",
+};
+
+const questionCard: React.CSSProperties = {
+  border: "1px solid #e2e8f0",
+  borderRadius: "12px",
+  padding: "16px",
+  background: "#fff",
+};
+
+const questionText: React.CSSProperties = {
+  fontSize: "16px",
+  marginTop: 0,
+  lineHeight: 1.5,
+};
+
+const metaGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "12px",
+};
+
+const infoLabel: React.CSSProperties = {
+  fontSize: "12px",
+  color: "#64748b",
+  fontWeight: "bold",
+};
+
+const infoValue: React.CSSProperties = {
+  marginTop: "4px",
+  fontSize: "13px",
+};

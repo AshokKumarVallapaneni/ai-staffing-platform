@@ -234,8 +234,13 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
-    const taggedQuestions = await tagQuestionsWithAI(rawQuestions.slice(0, 50));
+    const batchSize=25;
+    const taggedQuestions : TaggedQuestion[] = [];
+    for (let i = 0; i < rawQuestions.length; i += batchSize) {
+      const batch = rawQuestions.slice(i, i + batchSize);
+      const taggedBatch = await tagQuestionsWithAI(batch);
+      taggedQuestions.push(...taggedBatch);
+    }
 
     const rowsToInsert = taggedQuestions.map((q) => ({
       question_text: q.question_text,

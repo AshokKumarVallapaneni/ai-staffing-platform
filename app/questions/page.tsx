@@ -295,6 +295,35 @@ export default function QuestionsPage() {
         </div>
 
         <div style={{ display: "grid", gap: "14px" }}>
+          <div style={selectAllBox}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="checkbox"
+                checked={
+                  questions.length > 0 &&
+                  questions.every((q) => selectedIds.includes(q.id))
+                }
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedIds([
+                      ...new Set([
+                        ...selectedIds,
+                        ...questions.map((q) => q.id),
+                      ]),
+                    ]);
+                  } else {
+                    setSelectedIds(
+                      selectedIds.filter(
+                        (id) => !questions.some((q) => q.id === id)
+                      )
+                    );
+                  }
+                }}
+              />
+              Select All on this page
+            </label>
+          </div>
+
           {questions.map((q) => {
             const diff = getDifficultyColor(q.difficulty);
 
@@ -539,6 +568,7 @@ const primaryButton: React.CSSProperties = { padding: "10px 16px", background: "
 const smallButton: React.CSSProperties = { padding: "6px 10px", background: "#111827", color: "#fff", borderRadius: "6px", cursor: "pointer", border: "none", fontSize: "12px", whiteSpace: "nowrap" };
 const actionButton: React.CSSProperties = { ...smallButton, padding: "6px 10px" };
 const toolbar: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" };
+const selectAllBox: React.CSSProperties = { display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px", fontWeight: "bold", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px" };
 const errorBox: React.CSSProperties = { padding: "14px", background: "#fee2e2", color: "#991b1b", borderRadius: "10px", marginBottom: "12px" };
 const questionCard: React.CSSProperties = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "16px", boxShadow: "0 4px 14px rgba(15,23,42,.06)" };
 const questionText: React.CSSProperties = { fontSize: "16px", fontWeight: 700, marginBottom: "12px", lineHeight: 1.45 };
